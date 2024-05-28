@@ -1,5 +1,45 @@
+import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
+
+Future<List<Book>> fetchBooks() async {
+  final response = await http.get(
+      Uri.parse('https://www.googleapis.com/books/v1/volumes?q=macedonia'));
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final items = data['items'] as List<dynamic>;
+
+    if (items.isNotEmpty) {
+      return items
+          .map((item) => Book.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } else {
+      throw Exception('No books found');
+    }
+  } else {
+    throw Exception('Failed to load books');
+  }
+}
+
+class Book {
+  final String title;
+  final String description;
+
+  const Book({
+    required this.title,
+    required this.description,
+  });
+
+  factory Book.fromJson(Map<String, dynamic> json) {
+    final volumeInfo = json['volumeInfo'] as Map<String, dynamic>;
+    return Book(
+      title: volumeInfo['title'] ?? 'No title available',
+      description: volumeInfo['description'] ?? 'No description available',
+    );
+  }
+}
 
 void main() {
   runApp(const MaterialApp(debugShowCheckedModeBanner: false, home: MyApp()));
@@ -13,103 +53,47 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  final _formKey = GlobalKey<FormState>();
-  DateTime? _selectedDate;
-
-  void _selectDate() {
-    showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    ).then((pickedDate) {
-      if (pickedDate == null) {
-        return;
-      }
-      setState(() {
-        _selectedDate = pickedDate;
-      });
-    });
-  }
+  late Future<List<Book>> futureBooks;
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.deepPurple[100],
-        title: const Text("Forms"),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(50, 50, 50, 20),
-          child: Form(
-            key: _formKey,
-            child: ListView(
-              children: [
-                const Text("Please Enter Email:"),
-                TextFormField(
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Enter Email';
-                    } else if (!value.contains('@')) {
-                      return 'Enter Valid Email';
-                    }
-                    return null;
-                  },
-                  decoration: const InputDecoration(
-                    label: Text('Email'),
-                  ),
-                ),
-                const SizedBox(
-                  height: 50,
-                ),
-                const Text("Please Enter Password:"),
-                TextFormField(
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Enter Password';
-                    } else if (value.length < 5) {
-                      return 'Password must be at least 5 characters';
-                    }
-                    return null;
-                  },
-                  decoration: const InputDecoration(
-                    label: Text('Password'),
-                  ),
-                ),
-                const SizedBox(
-                  height: 50,
-                ),
-                const Text('Select Date'),
-                Text(_selectedDate == null ? '' : _selectedDate.toString()),
-                ElevatedButton(
-                    onPressed: () {
-                      _selectDate();
-                    },
-                    child: const Text("Select Date")),
-                
-                const SizedBox(
-                  height: 50,
-                ),
-                FloatingActionButton(
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved!')),
-                      );
-                    }else if (_selectedDate == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Select Date of Birth')),
-                      );
-                    }
-                  },
-                  child: const Text('Save'),
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  void initState() {
+    super.initState();
+    futureBooks = fetchBooks();
   }
+
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      backgroundColor: Colors.deepPurple[100],
+      title: const Text('Fetching JSON Data'),
+    ),
+    body: Padding(
+      padding: const EdgeInsets.all(30),
+      child: FutureBuilder<List<Book>>(
+        future: futureBooks,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('${snapshot.error}'));
+          } else if (snapshot.hasData) {
+            return ListView.builder(
+              itemCount: snapshot.data!.length,
+              itemBuilder: (context, index) {
+                final book = snapshot.data![index];
+                return ListTile(
+                  title: Text(book.title),
+                  subtitle: Text(book.description),
+                );
+              },
+            );
+          } else {
+            return const Center(child: Text('No books available'));
+          }
+        },
+      ),
+    ),
+  );
+}
 }
